@@ -237,11 +237,15 @@ class Pose_estimation_rosnode():
         image = np.frombuffer(image_data.data, dtype=np.uint8).reshape(image_data.height, image_data.width, -1)
 
         pred = self.inference.process_scene(image)
+        #rospy.loginfo(pred)
 
         msg = PoseArray()
         msg.header = image_data.header # this might be wrong, but lets try
         for i, p in enumerate(pred):
             T, bbox = self.mid_depth(p)
+
+            if not T:
+                continue
 
             if T[2] < 10:
                 print(T)
