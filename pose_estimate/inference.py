@@ -16,15 +16,34 @@ from geometry_msgs.msg import PoseArray
 import tf
 from geometry_msgs.msg import Pose
 
+NUM_VIEWS = 10
+NUM_OBJ = 30
 
 # local copy to avoid relying on utils due to name clash
-def loadCheckpoint(model_path):
+def loadCheckpoint(model_path, encoder):
     # Load checkpoint and parameters
     checkpoint = torch.load(model_path)
 
     # Load model
-    num_views = int(checkpoint['model']['l3.bias'].shape[0]/(6+1))
-    model = Model(num_views=num_views).cuda()
+    #num_views = int(checkpoint['model']['l3.bias'].shape[0]/(6+1))
+    num_views = NUM_VIEWS
+    #model = Model(num_views=num_views).cuda()
+    # model = Model(num_views=len(views),
+    #               num_objects=len(model_path_loss),
+    #               finetune_encoder=args.getboolean('Training','FINETUNE_ENCODER', fallback=False),
+    #               classify_objects=args.getboolean('Training','CLASSIFY_OBJECTS', fallback=False),
+    #               weight_init_name=args.get('Training', 'WEIGHT_INIT_NAME', fallback=""))
+    model = Model(num_views=NUM_VIEWS,
+                  num_objects=NUM_OBJ,
+                  finetune_encoder=True,
+                  classify_objects=False,
+                  weight_init_name="")
+
+    # TODO: These are probably just overwritten, check if so
+    model.encoder.state_dict()['weight'].copy_(encoder.encoder_dense_MatMul.state_dict()['weight'])
+    model.encoder.state_dict()['bias'].copy_(encoder.encoder_dense_MatMul.state_dict()['bias'])
+
+    encoder.encoder_dense_MatMul = None
 
     model.load_state_dict(checkpoint['model'])
 
@@ -112,14 +131,15 @@ class Inference():
 
         # load yolo detector
         detector = torch.hub.load(detector_repo, 'custom', path=detector_weight_path, source='local')
-        detector.conf = 0.20 # change confidence threshold if necessary
+        #detector.conf = 0.20 # change confidence threshold if necessary
 
         # load AE autoencoder
         encoder = Encoder(encoder_weights).to(device)
         encoder.eval()
 
         # load pose estimator
-        model, num_views = loadCheckpoint(pose_estimator_weights)
+        model, num_views = loadCheckpoint(pose_estimator_weights, encoder)
+        model.to(device)
         model = model.eval() # Set model to eval mode
 
         self.device = device
@@ -127,6 +147,22 @@ class Inference():
         self.encoder = encoder
         self.model = model
         self.num_views = num_views
+
+    def get_rotpred_for_obj(self, predicted_poses, obj_id):
+        views = self.num_views
+        # confidences ordered by object first, then views
+        confs = predicted_poses[:,views * obj_id:views * (obj_id + 1)]
+        # which pose has highest conf
+        index = torch.argmax(confs)
+        print(index.tolist())
+        print(confs.tolist())
+        # jump past confidences and to the right object and right view
+        pose_start = NUM_OBJ * self.num_views + obj_id * self.num_views * 6 +  index * 6 # +3 if with translation
+        pose_end = pose_start + 6
+        curr_pose = predicted_poses[:,pose_start:pose_end]
+        Rs_predicted = compute_rotation_matrix_from_ortho6d(curr_pose)
+        return Rs_predicted.cpu().detach().numpy()[0]
+
 
     def process_crop(self, detection):
         # Disable gradients for the encoder
@@ -141,7 +177,12 @@ class Inference():
             resize=(128,128)
             interpolation=cv2.INTER_NEAREST
 
+            # comments are approximate tensor format
             image = detection['im']
+            # box = detection['box'] # ex [476.99997, 112.96561, 848., 480.]
+            # conf = detection['conf'] # ex 0.32861
+            cls = detection['cls'] # ex 7.
+            # label = detection['label'] # ex '8 0.33'
 
             img = cv2.resize(image, resize, interpolation = interpolation)
 
@@ -163,14 +204,12 @@ class Inference():
         # Predict poses from the codes
         batch_codes = torch.tensor(np.stack([norm_code]), device=self.device, dtype=torch.float32)
         predicted_poses = self.model(batch_codes)
-        confs = predicted_poses[:,:self.num_views]
-        # which pose has highest conf
-        index = torch.argmax(confs)
-        pose_start = self.num_views # +3 if with translation
-        pose_end = pose_start + 6
-        curr_pose = predicted_poses[:,pose_start:pose_end]
-        Rs_predicted = compute_rotation_matrix_from_ortho6d(curr_pose)
-        return Rs_predicted.cpu().detach().numpy()[0]
+
+        rot = self.get_rotpred_for_obj(predicted_poses, cls.type(torch.int64))1
+
+        # TODO correct rotation for location in image to see if that helps
+
+        return rot
 
     def process_scene(self, image):
         detections = self.detector(image)
@@ -179,8 +218,8 @@ class Inference():
         for crop_det in crops_det:
             Rs_predicted = self.process_crop(crop_det)
             #cheking if conversion is needed TODO: write correct comment when fixed
-            Rs_predicted = conv_R_pytorch2opengl_np(Rs_predicted)
-            #Rs_predicted = conv_R_opengl2pytorch_np(Rs_predicted)
+            #Rs_predicted = conv_R_pytorch2opengl_np(Rs_predicted)
+            Rs_predicted = conv_R_opengl2pytorch_np(Rs_predicted)
             crop_det['rot'] = Rs_predicted
         return crops_det
 
@@ -244,11 +283,9 @@ class Pose_estimation_rosnode():
         for i, p in enumerate(pred):
             T, bbox = self.mid_depth(p)
 
-            if not T:
+            # throw away if no good depth for now TODO
+            if not T or T[2] < 0.01:
                 continue
-
-            if T[2] < 10:
-                print(T)
 
             pose = Pose()
             pose.position.x = T[0]
@@ -256,7 +293,7 @@ class Pose_estimation_rosnode():
             pose.position.z = T[2]
 
             mat = rtToMat(p['rot'], T)
-            print(mat)
+            #print(mat)
             qt = tf.transformations.quaternion_from_matrix(mat)
             pose.orientation.x = qt[0]
             pose.orientation.y = qt[1]
@@ -279,9 +316,7 @@ class Pose_estimation_rosnode():
 
             self.debug_counter += 1
 
-        #rospy.loginfo("run_callback publishing: {} {}".format(np.array_str(rot), np.array_str(Ts)))
-        #self.pub.publish("{} {}".format(np.array_str(rot), np.array_str(Ts)))
-        rospy.loginfo("run_callback publishing: {} ".format(msg))
+        #rospy.loginfo("run_callback publishing: {} ".format(msg))
         self.pub.publish(msg)
 
 def realsense_to_world_callback(msg):
