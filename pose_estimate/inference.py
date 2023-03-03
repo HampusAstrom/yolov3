@@ -117,6 +117,25 @@ def conv_R_pytorch2opengl_np(R):
 
     return R_opengl
 
+def correct_R(R, t_est):
+    # correcting the rotation matrix
+    # the codebook consists of centered object views, but the test image crop is not centered
+    # we determine the rotation that preserves appearance when translating the object
+
+    # SHBE fix - x and y translation should be negative/inverted like opengl2pytorch conversion?
+    t_est = t_est*np.array([-1.0,-1.0,1.0])
+
+    d_alpha_y = np.arctan(t_est[0]/np.sqrt(t_est[2]**2+t_est[1]**2))
+    d_alpha_x = - np.arctan(t_est[1]/t_est[2])
+    R_corr_x = np.array([[1,0,0],
+                         [0,np.cos(d_alpha_x),-np.sin(d_alpha_x)],
+                         [0,np.sin(d_alpha_x),np.cos(d_alpha_x)]])
+    R_corr_y = np.array([[np.cos(d_alpha_y),0,np.sin(d_alpha_y)],
+                         [0,1,0],
+                         [-np.sin(d_alpha_y),0,np.cos(d_alpha_y)]])
+    R_corrected = np.dot(R_corr_y,np.dot(R_corr_x,R))
+    return R_corrected
+
 class Inference():
     def __init__(self):
         #detector_weight_path = "/home/hampus/vision/yolov3/runs/train/exp4/weights/best.pt"
@@ -205,9 +224,7 @@ class Inference():
         batch_codes = torch.tensor(np.stack([norm_code]), device=self.device, dtype=torch.float32)
         predicted_poses = self.model(batch_codes)
 
-        rot = self.get_rotpred_for_obj(predicted_poses, cls.type(torch.int64))1
-
-        # TODO correct rotation for location in image to see if that helps
+        rot = self.get_rotpred_for_obj(predicted_poses, cls.type(torch.int64))
 
         return rot
 
@@ -217,9 +234,6 @@ class Inference():
         crops_det = detections.crop(save=False) # set to True to debug crops
         for crop_det in crops_det:
             Rs_predicted = self.process_crop(crop_det)
-            #cheking if conversion is needed TODO: write correct comment when fixed
-            #Rs_predicted = conv_R_pytorch2opengl_np(Rs_predicted)
-            Rs_predicted = conv_R_opengl2pytorch_np(Rs_predicted)
             crop_det['rot'] = Rs_predicted
         return crops_det
 
@@ -286,6 +300,12 @@ class Pose_estimation_rosnode():
             # throw away if no good depth for now TODO
             if not T or T[2] < 0.01:
                 continue
+
+            # correct rotation for location in image to see if that helps
+            p['rot'] = correct_R(p['rot'], T)
+            #checking if conversion is needed TODO: write correct comment when fixed
+            #p['rot'] = conv_R_pytorch2opengl_np(p['rot'])
+            #p['rot'] = conv_R_opengl2pytorch_np(p['rot'])
 
             pose = Pose()
             pose.position.x = T[0]
