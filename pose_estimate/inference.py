@@ -150,7 +150,7 @@ class Inference():
 
         # load yolo detector
         detector = torch.hub.load(detector_repo, 'custom', path=detector_weight_path, source='local')
-        #detector.conf = 0.20 # change confidence threshold if necessary
+        detector.conf = 0.50 # change confidence threshold if necessary
 
         # load AE autoencoder
         encoder = Encoder(encoder_weights).to(device)
@@ -182,6 +182,29 @@ class Inference():
         Rs_predicted = compute_rotation_matrix_from_ortho6d(curr_pose)
         return Rs_predicted.cpu().detach().numpy()[0]
 
+    def mid_depth(self, detection, points_data):
+        box = detection['box']
+        tlx = box[0].cpu()
+        tly = box[1].cpu()
+        brx = box[2].cpu()
+        bry = box[3].cpu()
+
+        bbox = [tlx, tly, brx, bry]
+
+        mid_x = int((tlx + brx)/2)
+        mid_y = int((tly + bry)/2)
+
+        if points_data is None:
+            return None, bbox
+
+        temp = point_cloud2.read_points(points_data, field_names=['x', 'y', 'z'], skip_nans=True, uvs=[(mid_x, mid_y)])
+        T = list(list(temp)[0])
+
+        # throw away if no good depth for now TODO
+        if T[2] < 0.01:
+            return None, bbox
+
+        return T, bbox
 
     def process_crop(self, detection):
         # Disable gradients for the encoder
@@ -228,14 +251,20 @@ class Inference():
 
         return rot
 
-    def process_scene(self, image):
+    def process_scene(self, image, points_data):
         detections = self.detector(image)
 
         crops_det = detections.crop(save=False) # set to True to debug crops
+        ret = []
         for crop_det in crops_det:
+            T, bbox = self.mid_depth(crop_det, points_data)
+            if not T:
+                continue
             Rs_predicted = self.process_crop(crop_det)
             crop_det['rot'] = Rs_predicted
-        return crops_det
+            crop_det['T'] = T
+            ret.append(crop_det)
+        return ret
 
 class Pose_estimation_rosnode():
     def __init__(self):
@@ -255,26 +284,6 @@ class Pose_estimation_rosnode():
 
         rospy.spin()
 
-    def mid_depth(self, detection):
-        box = detection['box']
-        tlx = box[0].cpu()
-        tly = box[1].cpu()
-        brx = box[2].cpu()
-        bry = box[3].cpu()
-
-        bbox = [tlx, tly, brx, bry]
-
-        mid_x = int((tlx + brx)/2)
-        mid_y = int((tly + bry)/2)
-
-        if self.points_data is None:
-            return None, bbox
-
-        temp = point_cloud2.read_points(self.points_data, field_names=['x', 'y', 'z'], skip_nans=True, uvs=[(mid_x, mid_y)])
-        T = list(list(temp)[0])
-
-        return T, bbox
-
     def depth_callback(self, depth_data):
         rospy.loginfo("depth_callback called")
         #self.depth = self.bridge.imgmsg_to_cv2(data, 'passthrough')
@@ -289,13 +298,13 @@ class Pose_estimation_rosnode():
         #image = self.bridge.imgmsg_to_cv2(data, 'passthrough')
         image = np.frombuffer(image_data.data, dtype=np.uint8).reshape(image_data.height, image_data.width, -1)
 
-        pred = self.inference.process_scene(image)
+        pred = self.inference.process_scene(image, self.points_data)
         #rospy.loginfo(pred)
 
         msg = PoseArray()
         msg.header = image_data.header # this might be wrong, but lets try
         for i, p in enumerate(pred):
-            T, bbox = self.mid_depth(p)
+            T = p['T']
 
             # throw away if no good depth for now TODO
             if not T or T[2] < 0.01:
@@ -320,6 +329,10 @@ class Pose_estimation_rosnode():
             pose.orientation.z = qt[2]
             pose.orientation.w = qt[3]
             msg.poses.append(pose)
+
+            print()
+            print(p['cls'])
+            print(p['label'])
 
         # save image and estimates every x images with detections when calibrating
         debug = False
