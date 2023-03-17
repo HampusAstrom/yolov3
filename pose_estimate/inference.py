@@ -260,6 +260,8 @@ class Inference():
 
         crops_det = detections.crop(save=False) # set to True to debug crops
         ret = []
+        line_thickness = 3
+        annotator = Annotator(image, line_width=line_thickness) # example=str(names)
         for crop_det in crops_det:
             T, bbox = self.mid_depth(crop_det, points_data)
             if not T:
@@ -269,7 +271,19 @@ class Inference():
             crop_det['T'] = T
             crop_det['bbox'] = bbox
             ret.append(crop_det)
-        return ret
+
+            # debugging and such
+            if DEBUG:
+                print()
+                print(crop_det['cls'])
+                print(crop_det['label'])
+
+                annotator.box_label(crop_det['bbox'], crop_det['label'], color=colors(crop_det['cls'], True))
+        if DEBUG:
+            yoloimg = annotator.result().flatten().tobytes()
+        else:
+            yoloimg = None
+        return ret, yoloimg
 
 class Pose_estimation_rosnode():
     def __init__(self):
@@ -304,13 +318,11 @@ class Pose_estimation_rosnode():
         #image = self.bridge.imgmsg_to_cv2(data, 'passthrough')
         image = np.frombuffer(image_data.data, dtype=np.uint8).reshape(image_data.height, image_data.width, -1)
 
-        pred = self.inference.process_scene(image, self.points_data)
+        pred, yoloimg = self.inference.process_scene(image, self.points_data)
         #rospy.loginfo(pred)
 
         msg = PoseArray()
         msg.header = image_data.header # TODO this might be wrong, but lets
-        line_thickness = 3
-        annotator = Annotator(image, line_width=line_thickness) # example=str(names)
         for i, p in enumerate(pred):
             T = p['T']
 
@@ -338,14 +350,6 @@ class Pose_estimation_rosnode():
             pose.orientation.w = qt[3]
             msg.poses.append(pose)
 
-            # debugging and such
-            if DEBUG:
-                print()
-                print(p['cls'])
-                print(p['label'])
-
-                annotator.box_label(p['bbox'], p['label'], color=colors(p['cls'], True))
-
         if DEBUG:
             yolomsg = Image() #= self.br.cv2_to_imgmsg(annotator.result(), 'passthrough')
             yolomsg.header = image_data.header # TODO this might be wrong, but lets
@@ -354,8 +358,7 @@ class Pose_estimation_rosnode():
             yolomsg.encoding = image_data.encoding
             yolomsg.is_bigendian = image_data.is_bigendian
             yolomsg.step = image_data.step
-            #yolomsg.data = annotator.result()
-            yolomsg.data = annotator.result().flatten().tobytes()
+            yolomsg.data = yoloimg
             self.pubYolo.publish(yolomsg)
             self.pub.publish()
 
