@@ -15,12 +15,12 @@ RUN pip install --no-cache -r requirements.txt coremltools onnx gsutil notebook 
 RUN pip install --no-cache torch==1.10.0+cu113 torchvision==0.11.1+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
 
 # Create working directory
-RUN mkdir -p /usr/src/yolov3
-WORKDIR /usr/src/yolov3
+#RUN mkdir -p /usr/src/yolov3
+#WORKDIR /usr/src/yolov3
 
 # Requirements
-COPY ./requirements.txt /usr/src/yolov3/requirements.txt
-RUN pip install --no-cache -r requirements.txt
+#COPY ./requirements.txt /usr/src/yolov3/requirements.txt
+#RUN pip install --no-cache -r requirements.txt
 
 # Downloads to user config dir
 ADD https://ultralytics.com/assets/Arial.ttf /root/.config/Ultralytics/
@@ -37,19 +37,23 @@ RUN curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | apt
 RUN apt update && apt install -y ros-noetic-ros-base
 # pip install rospkg: probably not the best solution, but seems to work:
 RUN pip install rospkg
+#RUN pip install cvbridge3
 # installing tf dependency here. Also not the best idea. (package.xml doesn't exist here)
 RUN apt update && apt install -y ros-noetic-tf
+ENV PYTHONPATH=$PYTHONPATH:/opt/ros/noetic/lib/python3/dist-packages
+# ENV PYTHONPATH=$PYTHONPATH:/usr/src/
 
 # Copy contents
-COPY . /usr/src/yolov3
+#COPY . /usr/src/yolov3
 
 ENV NVIDIA_VISIBLE_DEVICES all
 ENV NVIDIA_DRIVER_CAPABILITIES graphics,utility,compute,display
 
 #entrypoint is always run at container startup
 COPY entrypoint.sh /root/
-ENTRYPOINT ["/root/entrypoint.sh"]
+#ENTRYPOINT ["/root/entrypoint.sh"]
 #CMD ["python" "./pose_estimate/inference.py"]
+CMD ["bash", "-l"]
 
 # Usage Examples -------------------------------------------------------------------------------------------------------
 

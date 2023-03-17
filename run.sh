@@ -1,5 +1,5 @@
 #!/bin/bash
-SHARED_FOLDER=$(dirname $(readlink -f $0) | rev | cut -d'/' -f3- | rev)
+SHARED_FOLDER=$(dirname $(readlink -f $0) | rev | cut -d'/' -f1- | rev)
 #SHARED_FOLDER="$PWD/temp"
 
 docker run --gpus all -ti --rm --ipc=host --network=host \
@@ -12,7 +12,9 @@ docker run --gpus all -ti --rm --ipc=host --network=host \
                     -v ${SHARED_FOLDER}:/shared-folder \
                     -e DISPLAY=$DISPLAY \
                     --env QT_X11_NO_MITSHM=1 \
-                    --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" yolo_ros bash
+                    --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+                    --workdir /shared-folder \
+                    yolo_ros bash
                     #--user=$( id -u $USER ):$( id -g $USER ) \
 
 #--user=$( id -u $USER ):$( id -g $USER )
