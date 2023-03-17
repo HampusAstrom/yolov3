@@ -15,9 +15,13 @@ from sensor_msgs import point_cloud2
 from geometry_msgs.msg import PoseArray
 import tf
 from geometry_msgs.msg import Pose
+#from cv_bridge import CvBridge
+
+from utils.plots import Annotator, colors
 
 NUM_VIEWS = 10
 NUM_OBJ = 30
+DEBUG = True
 
 # local copy to avoid relying on utils due to name clash
 def loadCheckpoint(model_path, encoder):
@@ -150,7 +154,7 @@ class Inference():
 
         # load yolo detector
         detector = torch.hub.load(detector_repo, 'custom', path=detector_weight_path, source='local')
-        detector.conf = 0.50 # change confidence threshold if necessary
+        detector.conf = 0.40 # change confidence threshold if necessary
 
         # load AE autoencoder
         encoder = Encoder(encoder_weights).to(device)
@@ -263,16 +267,18 @@ class Inference():
             Rs_predicted = self.process_crop(crop_det)
             crop_det['rot'] = Rs_predicted
             crop_det['T'] = T
+            crop_det['bbox'] = bbox
             ret.append(crop_det)
         return ret
 
 class Pose_estimation_rosnode():
     def __init__(self):
-        #self.bridge = CvBridge()
         self.inference = Inference()
         self.depth = None
         self.points_data = None
+        #self.br = CvBridge()
         self.pub = rospy.Publisher('pose_estimation', PoseArray, queue_size=10)
+        self.pubYolo = rospy.Publisher('yolo_detections', Image, queue_size=10)
         self.debug_counter = 0
         rospy.init_node('pose_estimation_hampus', anonymous=True)
         #rospy.Subscriber('/camera/aligned_depth_to_color/image_raw', Image, callback=self.depth_callback)
@@ -302,7 +308,9 @@ class Pose_estimation_rosnode():
         #rospy.loginfo(pred)
 
         msg = PoseArray()
-        msg.header = image_data.header # this might be wrong, but lets try
+        msg.header = image_data.header # TODO this might be wrong, but lets
+        line_thickness = 3
+        annotator = Annotator(image, line_width=line_thickness) # example=str(names)
         for i, p in enumerate(pred):
             T = p['T']
 
@@ -330,24 +338,41 @@ class Pose_estimation_rosnode():
             pose.orientation.w = qt[3]
             msg.poses.append(pose)
 
-            print()
-            print(p['cls'])
-            print(p['label'])
+            # debugging and such
+            if DEBUG:
+                print()
+                print(p['cls'])
+                print(p['label'])
+
+                annotator.box_label(p['bbox'], p['label'], color=colors(p['cls'], True))
+
+        if DEBUG:
+            yolomsg = Image() #= self.br.cv2_to_imgmsg(annotator.result(), 'passthrough')
+            yolomsg.header = image_data.header # TODO this might be wrong, but lets
+            yolomsg.height = image_data.height
+            yolomsg.width = image_data.width
+            yolomsg.encoding = image_data.encoding
+            yolomsg.is_bigendian = image_data.is_bigendian
+            yolomsg.step = image_data.step
+            #yolomsg.data = annotator.result()
+            yolomsg.data = annotator.result().flatten().tobytes()
+            self.pubYolo.publish(yolomsg)
+            self.pub.publish()
 
         # save image and estimates every x images with detections when calibrating
-        debug = False
-        save_interval = 20
-        if debug and len(pred)>0:
-            if self.debug_counter % save_interval == 0:
-                #save image and R, T and bboxes
+        # debug = False
+        # save_interval = 20
+        # if debug and len(pred)>0:
+        #     if self.debug_counter % save_interval == 0:
+        #         #save image and R, T and bboxes
 
-                ind = self.debug_counter/save_interval
-                with open("/shared-folder/RnT_{}.txt".format(ind), "w") as f:
-                    f.write("{} {}".format(np.array_str(rot), np.array_str(Ts)))
+        #         ind = self.debug_counter/save_interval
+        #         with open("/shared-folder/RnT_{}.txt".format(ind), "w") as f:
+        #             f.write("{} {}".format(np.array_str(rot), np.array_str(Ts)))
 
-                cv2.imwrite("/shared-folder/rgb_image_{}.png".format(ind), image)
+        #         cv2.imwrite("/shared-folder/rgb_image_{}.png".format(ind), image)
 
-            self.debug_counter += 1
+        #     self.debug_counter += 1
 
         #rospy.loginfo("run_callback publishing: {} ".format(msg))
         self.pub.publish(msg)
