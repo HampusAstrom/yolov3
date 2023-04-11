@@ -14,8 +14,8 @@ docker run --gpus all -ti --rm --ipc=host --network=host \
                     --env QT_X11_NO_MITSHM=1 \
                     --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
                     --workdir /shared-folder \
+                    --user=$( id -u $USER ):$( id -g $USER ) \
                     yolo_ros bash
-                    #--user=$( id -u $USER ):$( id -g $USER ) \
 
 #--user=$( id -u $USER ):$( id -g $USER )
 

@@ -22,6 +22,7 @@ from utils.plots import Annotator, colors
 NUM_VIEWS = 10
 NUM_OBJ = 30
 DEBUG = True
+SAVE_INTERVAL = 20
 
 # local copy to avoid relying on utils due to name clash
 def loadCheckpoint(model_path, encoder):
@@ -261,7 +262,7 @@ class Inference():
         crops_det = detections.crop(save=False) # set to True to debug crops
         ret = []
         line_thickness = 3
-        annotator = Annotator(image, line_width=line_thickness) # example=str(names)
+        annotator = Annotator(image.copy(), line_width=line_thickness) # example=str(names)
         for crop_det in crops_det:
             T, bbox = self.mid_depth(crop_det, points_data)
             if not T:
@@ -279,8 +280,10 @@ class Inference():
                 print(crop_det['label'])
 
                 annotator.box_label(crop_det['bbox'], crop_det['label'], color=colors(crop_det['cls'], True))
+
+                # TODO save crops to file too
         if DEBUG:
-            yoloimg = annotator.result().flatten().tobytes()
+            yoloimg = annotator.result()
         else:
             yoloimg = None
         return ret, yoloimg
@@ -350,6 +353,11 @@ class Pose_estimation_rosnode():
             pose.orientation.w = qt[3]
             msg.poses.append(pose)
 
+            if DEBUG and self.debug_counter % SAVE_INTERVAL == 0:
+                ind = self.debug_counter/SAVE_INTERVAL
+                with open("./temp/RnT_{}_{}.txt".format(ind, i), "w") as f:
+                        f.write("{} \n{}".format(p['rot'], T))
+
         if DEBUG:
             yolomsg = Image() #= self.br.cv2_to_imgmsg(annotator.result(), 'passthrough')
             yolomsg.header = image_data.header # TODO this might be wrong, but lets
@@ -358,26 +366,17 @@ class Pose_estimation_rosnode():
             yolomsg.encoding = image_data.encoding
             yolomsg.is_bigendian = image_data.is_bigendian
             yolomsg.step = image_data.step
-            yolomsg.data = yoloimg
+            yolomsg.data = yoloimg.flatten().tobytes()
             self.pubYolo.publish(yolomsg)
             self.pub.publish()
 
-        # save image and estimates every x images with detections when calibrating
-        # debug = False
-        # save_interval = 20
-        # if debug and len(pred)>0:
-        #     if self.debug_counter % save_interval == 0:
-        #         #save image and R, T and bboxes
+            if len(pred)>0:
+                ind = self.debug_counter/SAVE_INTERVAL
+                cv2.imwrite("./temp/rgb_image_{}.png".format(ind), image)
+                cv2.imwrite("./temp/rgb_image_{}_annotated.png".format(ind), yoloimg)
 
-        #         ind = self.debug_counter/save_interval
-        #         with open("/shared-folder/RnT_{}.txt".format(ind), "w") as f:
-        #             f.write("{} {}".format(np.array_str(rot), np.array_str(Ts)))
+                self.debug_counter += 1
 
-        #         cv2.imwrite("/shared-folder/rgb_image_{}.png".format(ind), image)
-
-        #     self.debug_counter += 1
-
-        #rospy.loginfo("run_callback publishing: {} ".format(msg))
         self.pub.publish(msg)
 
 def realsense_to_world_callback(msg):
