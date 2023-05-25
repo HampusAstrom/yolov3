@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 import cv2
+import os
 from Encoder import Encoder
 from Model import Model
 
@@ -180,6 +181,7 @@ class Inference():
         index = torch.argmax(confs)
         print(index.tolist())
         print(confs.tolist())
+        print(np.sum(confs.tolist()))
         # jump past confidences and to the right object and right view
         pose_start = NUM_OBJ * self.num_views + obj_id * self.num_views * 6 +  index * 6 # +3 if with translation
         pose_end = pose_start + 6
@@ -232,6 +234,9 @@ class Inference():
             # label = detection['label'] # ex '8 0.33'
 
             img = cv2.resize(image, resize, interpolation = interpolation)
+
+            # Trying some color changes to see if that is the issue
+            # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
             # Convert images to AE codes
             codes = []
@@ -320,6 +325,14 @@ class Pose_estimation_rosnode():
         rospy.loginfo("run_callback called")
         #image = self.bridge.imgmsg_to_cv2(data, 'passthrough')
         image = np.frombuffer(image_data.data, dtype=np.uint8).reshape(image_data.height, image_data.width, -1)
+        
+        if True: # testing override image
+            image = cv2.imread("./testing/10-0114.png")
+            #image = cv2.imread("./testing/10-0492.png")
+            #image = cv2.imread("./testing/8-0102.png")
+            #image = cv2.imread("./testing/8-0232.png")
+            image_data.width = 720
+            image_data.height = 540
 
         pred, yoloimg = self.inference.process_scene(image, self.points_data)
         #rospy.loginfo(pred)
