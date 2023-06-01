@@ -244,17 +244,19 @@ class Inference():
             # Normalize image
             img_max = np.max(img)
             img_min = np.min(img)
+            img = img.astype('float32')
             img = (img - img_min)/(img_max - img_min)
 
             # Run image through encoder
             img = torch.from_numpy(img).unsqueeze(0).permute(0,3,1,2).to(self.device)
             #print(img.shape)
-            code = self.encoder(img.float())
+            code = self.encoder(img)
+            if DEBUG:
+                print("encoder output shape {}".format(code.shape))
             code = code.detach().cpu().numpy()[0]
-            norm_code = code / np.linalg.norm(code)
 
         # Predict poses from the codes
-        batch_codes = torch.tensor(np.stack([norm_code]), device=self.device, dtype=torch.float32)
+        batch_codes = torch.tensor(np.stack([code]), device=self.device, dtype=torch.float32)
         predicted_poses = self.model(batch_codes)
 
         rot = self.get_rotpred_for_obj(predicted_poses, cls.type(torch.int64))
@@ -326,7 +328,7 @@ class Pose_estimation_rosnode():
         #image = self.bridge.imgmsg_to_cv2(data, 'passthrough')
         image = np.frombuffer(image_data.data, dtype=np.uint8).reshape(image_data.height, image_data.width, -1)
         
-        if True: # testing override image
+        if False: # testing override image
             image = cv2.imread("./testing/10-0114.png")
             #image = cv2.imread("./testing/10-0492.png")
             #image = cv2.imread("./testing/8-0102.png")
