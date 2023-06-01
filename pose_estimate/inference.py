@@ -234,12 +234,11 @@ class Inference():
             # label = detection['label'] # ex '8 0.33'
 
             img = cv2.resize(image, resize, interpolation = interpolation)
+            if DEBUG:
+                cv2.imwrite("./temp/post_resize_crop_cls_{}.png".format(cls), img)
 
             # Trying some color changes to see if that is the issue
             # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-
-            # Convert images to AE codes
-            codes = []
 
             # Normalize image
             img_max = np.max(img)
@@ -249,6 +248,8 @@ class Inference():
 
             # Run image through encoder
             img = torch.from_numpy(img).unsqueeze(0).permute(0,3,1,2).to(self.device)
+            if DEBUG:
+                print(type(img), img.shape)
             #print(img.shape)
             code = self.encoder(img)
             if DEBUG:
@@ -266,11 +267,11 @@ class Inference():
     def process_scene(self, image, points_data):
         detections = self.detector(image)
 
-        crops_det = detections.crop(save=False) # set to True to debug crops
+        crops_det = detections.crop(save=False) # set to True to debug crops, but is broken
         ret = []
         line_thickness = 3
         annotator = Annotator(image.copy(), line_width=line_thickness) # example=str(names)
-        for crop_det in crops_det:
+        for i, crop_det in enumerate(crops_det):
             T, bbox = self.mid_depth(crop_det, points_data)
             if not T:
                 continue
@@ -289,6 +290,8 @@ class Inference():
                 annotator.box_label(crop_det['bbox'], crop_det['label'], color=colors(crop_det['cls'], True))
 
                 # TODO save crops to file too
+                cv2.imwrite("./temp/crop{}.png".format(i), crop_det['im'])
+
         if DEBUG:
             yoloimg = annotator.result()
         else:
