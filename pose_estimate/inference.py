@@ -351,10 +351,11 @@ class Pose_estimation_rosnode():
             if not T or T[2] < 0.01:
                 continue
 
+            #p['rot'] = conv_R_pytorch2opengl_np(p['rot'])
             # correct rotation for location in image to see if that helps
             p['rot'] = correct_R(p['rot'], T)
             #checking if conversion is needed TODO: write correct comment when fixed
-            #p['rot'] = conv_R_pytorch2opengl_np(p['rot'])
+            p['rot'] = conv_R_pytorch2opengl_np(p['rot'])
             #p['rot'] = conv_R_opengl2pytorch_np(p['rot'])
 
             pose = Pose()
