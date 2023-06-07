@@ -22,7 +22,7 @@ from utils.plots import Annotator, colors
 
 NUM_VIEWS = 10
 NUM_OBJ = 30
-DEBUG = True
+DEBUG = False
 SAVE_INTERVAL = 20
 
 # local copy to avoid relying on utils due to name clash
@@ -179,9 +179,10 @@ class Inference():
         confs = predicted_poses[:,views * obj_id:views * (obj_id + 1)]
         # which pose has highest conf
         index = torch.argmax(confs)
-        print(index.tolist())
-        print(confs.tolist())
-        print(np.sum(confs.tolist()))
+        if DEBUG:
+            print(index.tolist())
+            print(confs.tolist())
+            print(np.sum(confs.tolist()))
         # jump past confidences and to the right object and right view
         pose_start = NUM_OBJ * self.num_views + obj_id * self.num_views * 6 +  index * 6 # +3 if with translation
         pose_end = pose_start + 6
@@ -397,25 +398,6 @@ class Pose_estimation_rosnode():
                 self.debug_counter += 1
 
         self.pub.publish(msg)
-
-def realsense_to_world_callback(msg):
-    # called when a new message arrives at /pose_estimation
-    # then publishes at /pose_estimation_world_frame
-    # depends on a tftree where realsense_link exists and realsense_rgb_frame exists
-    # TODO: this stuff does not work at all yet, it's just a copy from a ros tutorial
-    broadcaster = tf.TransformBroadcaster()  # TODO should not be in the callback. reuse same bc
-    broadcaster.sendTransform((msg.position.x, msg.position.y, msg.position.z),
-                     tf.transformations.quaternion_from_euler(0, 0, msg.theta),
-                     rospy.Time.now(),
-                     "object","camera")
-    # The syntax is:
-    # broadcaster.sendTransform(translation, rotation, timestamp, to_frame, from_frame)
-    # You publish the transformation from the last arg to the one to last arg
-    # alternatively:
-    broadcaster.sendTransform((msg.position.x, msg.position.y, msg.position.z),
-            (msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w),
-            rospy.Time.now(), "object", "camera")
-
 
 # main method only used for testing
 if __name__ == '__main__':
