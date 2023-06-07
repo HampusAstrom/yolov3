@@ -236,7 +236,7 @@ class Inference():
 
             img = cv2.resize(image, resize, interpolation = interpolation)
             if DEBUG:
-                cv2.imwrite("./temp/post_resize_crop_cls_{}.png".format(cls), img)
+                cv2.imwrite("./debug_output/post_resize_crop_cls_{}.png".format(cls), img)
 
             # Trying some color changes to see if that is the issue
             # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
@@ -291,7 +291,7 @@ class Inference():
                 annotator.box_label(crop_det['bbox'], crop_det['label'], color=colors(crop_det['cls'], True))
 
                 # TODO save crops to file too
-                cv2.imwrite("./temp/crop{}.png".format(i), crop_det['im'])
+                cv2.imwrite("./debug_output/crop{}.png".format(i), crop_det['im'])
 
         if DEBUG:
             yoloimg = annotator.result()
@@ -375,7 +375,7 @@ class Pose_estimation_rosnode():
 
             if DEBUG and self.debug_counter % SAVE_INTERVAL == 0:
                 ind = self.debug_counter/SAVE_INTERVAL
-                with open("./temp/RnT_{}_{}.txt".format(ind, i), "w") as f:
+                with open("./debug_output/RnT_{}_{}.txt".format(ind, i), "w") as f:
                         f.write("{} \n{}".format(p['rot'], T))
 
         if DEBUG:
@@ -392,8 +392,8 @@ class Pose_estimation_rosnode():
 
             if len(pred)>0:
                 ind = self.debug_counter/SAVE_INTERVAL
-                cv2.imwrite("./temp/rgb_image_{}.png".format(ind), image)
-                cv2.imwrite("./temp/rgb_image_{}_annotated.png".format(ind), yoloimg)
+                cv2.imwrite("./debug_output/rgb_image_{}.png".format(ind), image)
+                cv2.imwrite("./debug_output/rgb_image_{}_annotated.png".format(ind), yoloimg)
 
                 self.debug_counter += 1
 
