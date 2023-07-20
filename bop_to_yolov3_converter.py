@@ -3,8 +3,19 @@ import json
 import argparse
 import numpy as np
 
-def bb_reformat(bboxin, render_width, render_height):
+def clamp(val, size):
+    return min(max(0, val), size)
+
+def bb_reformat(bboxin, bbox_vis, render_width, render_height):
     tlx, tly, w, h = bboxin
+    #tlx_v, tly_v, w_v, h_v = bbox_vis
+
+    # since yolov3 cant handle bboxes that are outside image, but we still don't 
+    # want bboxes that get smaller due to occusions we overide when outside
+    tlx = clamp(tlx, render_width)
+    tly = clamp(tly, render_height)
+    w = clamp(w + tlx, render_width) - tlx
+    h = clamp(h + tly, render_height) - tly
 
     cx = tlx + w/2
     cy = tly + h/2
@@ -67,8 +78,9 @@ def convert_dataset(bop_dir, output_dir, val_frac = 0.1, width=720, height=540):
             with open(label_path_txt, "w") as label_file:
                 for i, obj_pi in enumerate(object_pose_id):
                     bbox = bbox_and_vis[scene_id][i]["bbox_obj"]
+                    bbox_vis = bbox_and_vis[scene_id][i]["bbox_visib"]
                     if bbox != [-1, -1, -1, -1]:
-                        cx, cy, w, h = bb_reformat(bbox, width, height)
+                        cx, cy, w, h = bb_reformat(bbox, bbox_vis, width, height)
                         label_file.write("{} {} {} {} {}\n".format(cls2clsind[obj_pi["obj_id"]], cx, cy, w, h))
         print(f"{n+1} out of {len(dirs)} directories converted")
     print('Conversion completed successfully.')
