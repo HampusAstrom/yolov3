@@ -4,6 +4,8 @@ import numpy as np
 import torch.nn as nn
 import cv2
 import os
+import argparse
+import configparser
 from Encoder import Encoder
 from Model import Model
 
@@ -20,27 +22,28 @@ from geometry_msgs.msg import Pose
 
 from utils.plots import Annotator, colors
 
-NUM_VIEWS = 10
-NUM_OBJ = 30
-DEBUG = False
+# TODO get some of these values from config instead
+# NUM_VIEWS = 10
+# NUM_OBJ = 30
+DEBUG = True
 SAVE_INTERVAL = 20
 
 # local copy to avoid relying on utils due to name clash
-def loadCheckpoint(model_path, encoder):
+def loadCheckpoint(model_path, encoder, args, num_obj):
     # Load checkpoint and parameters
     checkpoint = torch.load(model_path)
 
     # Load model
     #num_views = int(checkpoint['model']['l3.bias'].shape[0]/(6+1))
-    num_views = NUM_VIEWS
+    num_views = args.get('Rendering', 'VIEWS', fallback=10)
     #model = Model(num_views=num_views).cuda()
     # model = Model(num_views=len(views),
     #               num_objects=len(model_path_loss),
     #               finetune_encoder=args.getboolean('Training','FINETUNE_ENCODER', fallback=False),
     #               classify_objects=args.getboolean('Training','CLASSIFY_OBJECTS', fallback=False),
     #               weight_init_name=args.get('Training', 'WEIGHT_INIT_NAME', fallback=""))
-    model = Model(num_views=NUM_VIEWS,
-                  num_objects=NUM_OBJ,
+    model = Model(num_views=num_views,
+                  num_objects=num_obj,
                   finetune_encoder=True,
                   classify_objects=False,
                   weight_init_name="")
@@ -143,27 +146,27 @@ def correct_R(R, t_est):
     return R_corrected
 
 class Inference():
-    def __init__(self):
-        #detector_weight_path = "/home/hampus/vision/yolov3/runs/train/exp4/weights/best.pt"
+    def __init__(self, args, num_obj):
+        self.args = args
+        self.num_obj = num_obj
+        # TODO get these paths and values from config instead
         detector_weight_path = "./weights/detector.pt"
         detector_repo = "./"
-        #encoder_weights = "/home/hampus/vision/AugmentedAutoencoder/multi-pose/data/encoder/obj1-18/encoder.npy"
         encoder_weights = "./weights/encoder.npy"
-        #model_path = "/home/hampus/vision/AugmentedAutoencoder/multi-pose/output/test/models/model-epoch0.pt"
         pose_estimator_weights = "./weights/pose_estimator.pt"
 
         device = torch.device("cuda:0")
 
         # load yolo detector
         detector = torch.hub.load(detector_repo, 'custom', path=detector_weight_path, source='local')
-        detector.conf = 0.40 # change confidence threshold if necessary
+        detector.conf = 0.20 # change confidence threshold if necessary
 
         # load AE autoencoder
         encoder = Encoder(encoder_weights).to(device)
         encoder.eval()
 
         # load pose estimator
-        model, num_views = loadCheckpoint(pose_estimator_weights, encoder)
+        model, num_views = loadCheckpoint(pose_estimator_weights, encoder, self.args, num_obj)
         model.to(device)
         model = model.eval() # Set model to eval mode
 
@@ -184,7 +187,7 @@ class Inference():
             print(confs.tolist())
             print(np.sum(confs.tolist()))
         # jump past confidences and to the right object and right view
-        pose_start = NUM_OBJ * self.num_views + obj_id * self.num_views * 6 +  index * 6 # +3 if with translation
+        pose_start = self.num_obj * self.num_views + obj_id * self.num_views * 6 +  index * 6 # +3 if with translation
         pose_end = pose_start + 6
         curr_pose = predicted_poses[:,pose_start:pose_end]
         Rs_predicted = compute_rotation_matrix_from_ortho6d(curr_pose)
@@ -210,6 +213,7 @@ class Inference():
 
         # throw away if no good depth for now TODO
         if T[2] < 0.01:
+            print(f"T of {T} thrown away")
             return None, bbox
 
         return T, bbox
@@ -300,8 +304,10 @@ class Inference():
         return ret, yoloimg
 
 class Pose_estimation_rosnode():
-    def __init__(self):
-        self.inference = Inference()
+    def __init__(self, args, num_obj):
+        self.args = args
+        self.num_obj = num_obj
+        self.inference = Inference(args, self.num_obj)
         self.depth = None
         self.points_data = None
         #self.br = CvBridge()
@@ -353,9 +359,9 @@ class Pose_estimation_rosnode():
                 continue
 
             #p['rot'] = conv_R_pytorch2opengl_np(p['rot'])
-            # correct rotation for location in image to see if that helps
+            # correct rotation for location in image
             p['rot'] = correct_R(p['rot'], T)
-            #checking if conversion is needed TODO: write correct comment when fixed
+            # convert to opengl (cameracentric I think) format
             p['rot'] = conv_R_pytorch2opengl_np(p['rot'])
             #p['rot'] = conv_R_opengl2pytorch_np(p['rot'])
 
@@ -399,15 +405,21 @@ class Pose_estimation_rosnode():
 
         self.pub.publish(msg)
 
-# main method only used for testing
+# read config and spin up rosnode
 if __name__ == '__main__':
+    # Read configuration file
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config")
+    arguments = parser.parse_args()
 
-    #inference = Inference()
+    cfg_file_path = os.path.join("./", arguments.config)
+    args = configparser.ConfigParser()
+    args.read(cfg_file_path)
 
-    #test_img_path = '/home/hampus/vision/AugmentedAutoencoder/multi-pose/detection_data/images/1.png'
-    #bgr = cv2.imread(test_img_path)
+    objs = args.get('Dataset', 'MODEL_PATH_DATA', fallback=None)
+    if objs:
+        num_obj = len(objs)
+    else:
+        num_obj = 30
 
-    #pred = inference.process_scene(bgr)
-    #print(pred)
-
-    pose_estimation_rosnode = Pose_estimation_rosnode()
+    pose_estimation_rosnode = Pose_estimation_rosnode(args, num_obj)
