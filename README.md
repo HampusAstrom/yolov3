@@ -1,5 +1,4 @@
-<div align="center">How to use this fork</div>
-<p>
+# How to use this fork
 * Clone and follow instructions to train pose estimator (and possibly encoder) here first: 
 https://github.com/shbe-aau/multi-pose-estimation
 * Clone and install this repo, either like this or by building the docker container (the latter is recomended)
@@ -21,8 +20,8 @@ or by converting data generated with https://bop.felk.cvut.cz/method_info/348/ u
 * run the ROS node by starting pose_estimate/inference.py, the pose estimations will be published on "/pose_estimation_hampus"
 
 
-Below is the readme for the original repo, with guides and such for other ways to train and use yolov3
-</p>
+## Here below is the readme for the original repo, with guides and such for other ways to train and use yolov3
+
 
 
 <div align="center">
