@@ -1,3 +1,30 @@
+<div align="center">How to use this fork</div>
+<p>
+* Clone and follow instructions to train pose estimator (and possibly encoder) here first: 
+https://github.com/shbe-aau/multi-pose-estimation
+* Clone and install this repo, either like this or by building the docker container (the latter is recomended)
+```bash
+$ git clone https://github.com/ultralytics/yolov3
+$ cd yolov3
+$ pip install -r requirements.txt
+```
+alt for docker
+```bash
+$ git clone https://github.com/ultralytics/yolov3
+$ cd yolov3
+$ make
+```
+* Generate data to train on, either using DatasetFolderGenerator.py in https://github.com/shbe-aau/multi-pose-estimation
+or by converting data generated with https://bop.felk.cvut.cz/method_info/348/ using bop_to_yolov3_converter.py
+* train a yolo network on the data using train.py
+* start a roscore and something that runs libreasense to get camera stream data topics
+* run the ROS node by starting pose_estimate/inference.py, the pose estimations will be published on "/pose_estimation_hampus"
+
+
+Below is the readme for the original repo, with guides and such for other ways to train and use yolov3
+</p>
+
+
 <div align="center">
 <p>
    <a align="left" href="https://ultralytics.com/yolov3" target="_blank">
